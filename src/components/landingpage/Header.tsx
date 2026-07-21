@@ -88,8 +88,8 @@ export default function Header() {
               </a>
             ))}
             <hr className="border-zinc-100 dark:border-zinc-800" />
-            <Link href="/auth/login" className="text-zinc-600 dark:text-zinc-300">Sign In</Link>
-            <Link href="/auth/register" className="text-[#E03A1D] font-bold">Sign Up</Link>
+            <Link href="/auth/sign-in" className="text-zinc-600 dark:text-zinc-300">Sign In</Link>
+            <Link href="/auth/sign-up" className="text-[#E03A1D] font-bold">Sign Up</Link>
           </div>
         </div>
       )}
