@@ -6,18 +6,20 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const hostname = req.headers.get('host') || '';
 
-  // Determine the correct cookie domain for cross-subdomain authentication sharing
   const isProd = process.env.NODE_ENV === 'production';
+  
+  // Set proper root domain for cookies
+  // Replace 'africompound.com' with your actual custom domain when connected
+  const rootDomains = ['africompound.vercel.app', 'localhost:3000', 'localhost'];
   const cookieDomain = isProd ? '.africompound.vercel.app' : '.localhost';
 
-  // 1. Create an initial NextResponse to modify and pass along
   let res = NextResponse.next({
     request: {
       headers: req.headers,
     },
   });
 
-  // 2. Initialize Supabase SSR to sync, write, and refresh session cookies
+  // 1. Supabase SSR Session Refresh
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,8 +29,7 @@ export async function middleware(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            const modifiedOptions = { ...options, domain: cookieDomain };
+          cookiesToSet.forEach(({ name, value }) => {
             req.cookies.set(name, value);
           });
           
@@ -47,39 +48,39 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // This operation updates and refreshes the cookies on the response object
   await supabase.auth.getUser();
 
-  // Local development ports and live staging domains
-  const rootDomains = ['africompound.vercel.app', 'localhost:3000'];
-  
-  let currentHost = hostname;
-  rootDomains.forEach(domain => {
-    currentHost = currentHost.replace(`.${domain}`, '');
-  });
+  // 2. Extract Subdomain Safely
+  const currentHost = hostname.replace(/:\d+$/, ''); // Strip port numbers
 
-  // If hitting the base domain directly, serve the public marketing page
-  if (rootDomains.includes(hostname)) {
+  // Check if current host is directly visiting the root domain
+  const isRootDomain = rootDomains.includes(currentHost);
+
+  if (isRootDomain) {
+    // Serve normal marketing / sign-up routes
     return res;
   }
 
-  // 3. Perform the subdomain rewrite
-  // If the pathname already contains '/owners', strip it out temporarily
-  // so we don't end up with duplicate folders like /owners/bismark-house/owners/...
+  // Calculate the subdomain (e.g., "bismark" from "bismark.africompound.com")
+  let subdomain = currentHost;
+  rootDomains.forEach(domain => {
+    subdomain = subdomain.replace(`.${domain}`, '');
+  });
+
+  // 3. Prevent duplicate '/owners' path prefixes
   const cleanPathname = url.pathname.startsWith('/owners')
     ? url.pathname.replace('/owners', '')
     : url.pathname;
 
-  const rewriteUrl = new URL(`/owners/${currentHost}${cleanPathname}`, req.url);
-  
-  // Clone response headers and cookies to ensure the rewrite carries the session
+  const rewriteUrl = new URL(`/owners/${subdomain}${cleanPathname}${url.search}`, req.url);
+
   const rewrittenResponse = NextResponse.rewrite(rewriteUrl, {
     request: {
       headers: req.headers,
     }
   });
 
-  // Copy the updated Supabase cookies (including the new domain attribute) to the rewritten response
+  // Copy refreshed cookies over to rewritten response
   res.cookies.getAll().forEach((cookie) => {
     rewrittenResponse.cookies.set({
       name: cookie.name,
@@ -94,7 +95,6 @@ export async function middleware(req: NextRequest) {
   return rewrittenResponse;
 }
 
-// Ensure the middleware runs on all paths except internal assets
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
